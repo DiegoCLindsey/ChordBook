@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ChordBook 1.2.0</title>
+<title>ChordBook 1.3</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -170,6 +170,72 @@ input[type=color] { width: 28px; height: 28px; padding: 2px; cursor: pointer; bo
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
 .dragging { opacity: .35; }
+/* ══════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ══════════════════════════════════════════════════════════════ */
+.mobile-subtabs {
+  display: none; flex-shrink: 0;
+  border-bottom: 1px solid var(--border); background: var(--surface2);
+}
+.mobile-subtabs button {
+  flex: 1; font-family: var(--sans); font-size: 12px; font-weight: 600;
+  padding: 10px 0; border: none; background: transparent;
+  color: var(--text3); cursor: pointer; border-bottom: 2px solid transparent; transition: all .15s;
+}
+.mobile-subtabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.topbar-menu-btn {
+  display: none; background: transparent; border: 1px solid var(--border2);
+  color: var(--text2); border-radius: var(--radius); padding: 5px 10px;
+  font-size: 16px; cursor: pointer; line-height: 1; flex-shrink: 0;
+}
+.topbar-dropdown {
+  display: none; position: fixed; top: 48px; right: 0; left: 0;
+  background: var(--surface); border-bottom: 1px solid var(--border2);
+  flex-direction: column; z-index: 50; padding: 4px 0;
+}
+.topbar-dropdown.open { display: flex; }
+.topbar-dropdown .dd-item {
+  font-family: var(--sans); font-size: 13px; font-weight: 600; letter-spacing: .3px;
+  padding: 12px 16px; color: var(--text2); cursor: pointer; border: none;
+  background: transparent; text-align: left; border-bottom: 1px solid var(--border); width: 100%;
+}
+.topbar-dropdown .dd-item:last-child { border-bottom: none; }
+.topbar-dropdown .dd-item:hover { background: var(--surface2); color: var(--text); }
+.topbar-dropdown .dd-item.accent { color: var(--accent); }
+
+@media (max-width: 640px) {
+  .app { grid-template-rows: 48px 1fr auto; }
+  .topbar { gap: 8px; padding: 0 12px; }
+  .logo span { display: none; }
+  .topbar-actions { display: none !important; }
+  .topbar-menu-btn { display: block; margin-left: auto; }
+  .main { grid-template-columns: 1fr !important; }
+  .editor-panel { border-right: none; }
+  .mobile-subtabs { display: flex; }
+  .preview-panel { display: none; }
+  .preview-panel.mobile-visible { display: flex; }
+  .two-col { grid-template-columns: 1fr; }
+  textarea { min-height: 120px; }
+  .panel-body { padding: 10px 12px; gap: 8px; }
+  .doc-toolbar { padding: 6px 10px; gap: 7px; row-gap: 5px; }
+  .sep { display: none; }
+  .fb-toolbar { padding: 5px 10px; gap: 6px; }
+  .fb-song-name { display: none; }
+  .song-page-meta { display: none; }
+  .drag-handle { display: none; }
+  .icon-btn { width: 30px; height: 30px; font-size: 13px; }
+  .inline-st .st-btn { width: 26px; height: 26px; }
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal { max-width: 100%; max-height: 90vh; border-radius: var(--radius2) var(--radius2) 0 0; }
+}
+@media (min-width: 641px) {
+  .topbar-menu-btn { display: none !important; }
+  .mobile-subtabs { display: none !important; }
+  .topbar-dropdown { display: none !important; }
+  .preview-panel { display: flex !important; }
+}
+
 </style>
 </head>
 <body>
@@ -177,10 +243,17 @@ input[type=color] { width: 28px; height: 28px; padding: 2px; cursor: pointer; bo
 
   <!-- TOPBAR -->
   <div class="topbar">
-    <div class="logo">ChordBook <span>v1.2.0</span></div>
+    <div class="logo">ChordBook <span>v1.3</span></div>
     <div class="tabs">
       <button class="tab active" id="tabEditor" onclick="switchTab('editor')">Editor</button>
       <button class="tab" id="tabDoc" onclick="switchTab('document')">Documento</button>
+    </div>
+    <button class="topbar-menu-btn" id="menuBtn" onclick="toggleMenu()">☰</button>
+    <div class="topbar-dropdown" id="topbarDropdown">
+      <button class="dd-item" id="ddChuleta" onclick="toggleChuleta();closeMenu()" style="display:none;">🎸 Chuleta</button>
+      <button class="dd-item" onclick="importJSON();closeMenu()">Importar JSON</button>
+      <button class="dd-item accent" onclick="exportJSON();closeMenu()">Exportar JSON</button>
+      <button class="dd-item" onclick="exportHTML();closeMenu()">Exportar HTML</button>
     </div>
     <div class="topbar-actions">
       <button class="btn-sm" id="btnChuleta" onclick="toggleChuleta()" style="display:none;">🎸 Chuleta</button>
@@ -195,7 +268,11 @@ input[type=color] { width: 28px; height: 28px; padding: 2px; cursor: pointer; bo
 
     <!-- EDITOR -->
     <div class="editor-panel" id="editorPanel">
-      <div class="panel-header"><span class="panel-title">Editor de sección</span></div>
+      <div class="mobile-subtabs">
+        <button id="mobileTabEditor" class="active" onclick="mobileSubTab('editor')">Editor</button>
+        <button id="mobileTabPreview" onclick="mobileSubTab('preview')">Preview</button>
+      </div>
+      <div class="panel-header" id="editorPanelHeader"><span class="panel-title">Editor de sección</span></div>
       <div class="panel-body">
         <div class="two-col">
           <div class="field-row"><label class="field-label">Canción</label><input type="text" id="songName" placeholder="Nombre de la canción" list="song-list"><datalist id="song-list"></datalist></div>
@@ -785,6 +862,7 @@ function toggleChuleta(){
     footer.classList.remove('collapsed');
     btn.classList.add('active-toggle');
     btn.textContent='🎸 Chuleta ✕';
+    syncChuletaDropdown(true);
     // Trigger fretboard render for current song
     requestAnimationFrame(()=>{
       updateDocView(); // recalculate page heights without footer
@@ -795,6 +873,7 @@ function toggleChuleta(){
     footer.style.height='0';
     btn.classList.remove('active-toggle');
     btn.textContent='🎸 Chuleta';
+    syncChuletaDropdown(false);
     requestAnimationFrame(updateDocView);
   }
 }
@@ -885,12 +964,14 @@ function switchTab(tab){
     main.classList.remove('doc-view');main.style.gridTemplateColumns='1fr 1fr';
     ep.style.display='';pp.style.display='';dp.style.display='none';
     chuletaBtn.style.display='none';
+    const ddC2=document.getElementById('ddChuleta');if(ddC2)ddC2.style.display='none';
     // Close chuleta when leaving doc view
     if(chuletaOpen)toggleChuleta();
   }else{
     main.classList.add('doc-view');main.style.gridTemplateColumns='1fr';
     ep.style.display='none';pp.style.display='none';dp.style.display='';
     chuletaBtn.style.display='';
+    const ddC=document.getElementById('ddChuleta');if(ddC)ddC.style.display='';
     requestAnimationFrame(()=>updateDocView());
   }
 }
@@ -943,6 +1024,52 @@ function updateSongDatalist(){document.getElementById('song-list').innerHTML=DOC
 
 const ro=new ResizeObserver(()=>{if(document.getElementById('docPanel').style.display!=='none')updateDocView();});
 ro.observe(document.getElementById('docCanvas'));
+
+// ══════════════════════════════════════════════════════════════
+// MOBILE UI
+// ══════════════════════════════════════════════════════════════
+function isMobile(){ return window.innerWidth <= 640; }
+
+function toggleMenu(){
+  const dd = document.getElementById('topbarDropdown');
+  dd.classList.toggle('open');
+}
+function closeMenu(){
+  document.getElementById('topbarDropdown').classList.remove('open');
+}
+// Close dropdown on outside tap
+document.addEventListener('click', e => {
+  const btn = document.getElementById('menuBtn');
+  const dd = document.getElementById('topbarDropdown');
+  if(btn && !btn.contains(e.target) && dd && !dd.contains(e.target)) dd.classList.remove('open');
+});
+
+function mobileSubTab(tab){
+  const editorBody = document.querySelector('#editorPanel .panel-body');
+  const editorHeader = document.getElementById('editorPanelHeader');
+  const preview = document.getElementById('previewPanel');
+  const btnE = document.getElementById('mobileTabEditor');
+  const btnP = document.getElementById('mobileTabPreview');
+  if(tab === 'editor'){
+    editorBody.style.display = '';
+    editorHeader.style.display = '';
+    preview.classList.remove('mobile-visible');
+    btnE.classList.add('active'); btnP.classList.remove('active');
+  } else {
+    editorBody.style.display = 'none';
+    editorHeader.style.display = 'none';
+    preview.classList.add('mobile-visible');
+    btnE.classList.remove('active'); btnP.classList.add('active');
+  }
+}
+
+// Sync chuleta button to dropdown mirror
+const _origToggleChuleta = typeof toggleChuleta === 'function' ? toggleChuleta : null;
+function syncChuletaDropdown(open){
+  const dd = document.getElementById('ddChuleta');
+  if(dd) dd.textContent = open ? '🎸 Chuleta ✕' : '🎸 Chuleta';
+}
+
 window.addEventListener('load',()=>{measureChar();loadFromStorage();updateSongDatalist();updatePreview();});
 </script>
 </body>
