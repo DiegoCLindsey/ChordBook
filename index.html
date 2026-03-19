@@ -17,7 +17,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
 
-/* ── APP SHELL ───────────────────────────────────-──────────── */
+/* ── APP SHELL ─────────────────────────────────────────────── */
 .app {
   display: grid;
   grid-template-rows: 56px 1fr auto; /* topbar | main | footer */
@@ -350,7 +350,8 @@ function xlat(t){for(const k of Object.keys(LATIN))if(t.startsWith(k))return LAT
 function isChordTok(t){const re=/^[A-G][#b]?(m|M|maj|min|sus|dim|aug|add|7|9|11|13|6|5|4|2)*(\/[A-G][#b]?)?[0-9]*$/;return re.test(xlat(t))||re.test(t);}
 function isChordLine(l){const tr=l.trim();if(!tr)return false;return tr.split(/\s+/).every(isChordTok);}
 function xlatLine(l){return l.replace(/\S+/g,t=>xlat(t));}
-function rootOf(t){const m=xlat(t).match(/^([A-G][#b]?)/);if(!m)return null;const n=m[1];const idx=FLATS.indexOf(n);return idx!==-1?SHARPS[idx]:n;}
+function rootOf(t){const m=xlat(t).match(/^([A-G][#b]?)/);if(!m)return null;return m[1][0];}
+function fullRootOf(t){const m=xlat(t).match(/^([A-G][#b]?)/);if(!m)return null;const n=m[1];const idx=FLATS.indexOf(n);return idx!==-1?SHARPS[idx]:n;}
 function noteIdx(n){let i=SHARPS.indexOf(n);if(i===-1)i=FLATS.indexOf(n);return i;}
 function transpNote(n,st){const i=noteIdx(n);if(i===-1)return n;const ni=((i+st)%12+12)%12;return(FLATS.includes(n)&&!SHARPS.includes(n))?FLATS[ni]:SHARPS[ni];}
 function transpTok(t,st){if(!st)return t;const m=xlat(t).match(/^([A-G][#b]?)(.*)$/);if(!m)return t;const root=transpNote(m[1],st);const sl=m[2].match(/^(.*)\/(([A-G][#b]?))(.*)$/);if(sl)return root+sl[1]+'/'+transpNote(sl[2],st)+sl[4];return root+m[2];}
@@ -418,7 +419,7 @@ function songRootNotes(song){
     for(let j=0;j<lines.length;j++){
       if(!sec.flags[j])continue;
       for(const tok of lines[j].split(/\s+/)){
-        const r=rootOf(xlat(tok));
+        const r=fullRootOf(xlat(tok));
         if(r)roots.add(r);
       }
     }
@@ -640,7 +641,7 @@ function renderFretboardForSong(song){
   const legend=document.getElementById('fbLegend');
   legend.innerHTML='';
   roots.forEach(n=>{
-    const bg=noteColors[n]||'#555',fg=isDark(bg)?'#fff':'#111';
+    const bg=noteColors[n[0]]||'#555',fg=isDark(bg)?'#fff':'#111';
     const pill=document.createElement('span');pill.className='fb-note-pill';
     pill.style.cssText=`background:${bg};color:${fg};`;pill.textContent=n;
     legend.appendChild(pill);
@@ -720,20 +721,21 @@ function renderFretboard(){
     S('line',{x1:x,y1:TOP_PAD,x2:x,y2:TOP_PAD+(numStrings-1)*STR_GAP,stroke:'#444','stroke-width':'1'});
   }
 
+  // natural(note) → palette key (strips # or b)
+  const nat=n=>n[0];
+
   // ── Strings ─────────────────────────────────────────────
   for(let s=0;s<numStrings;s++){
     const y=yStr(s);
-    const thickness=Math.max(0.6,1.8-(s/(numStrings-1))*1.2); // thicker = lower string
+    const thickness=Math.max(0.6,1.8-(s/(numStrings-1))*1.2);
     S('line',{x1:LEFT_PAD,y1:y,x2:xFret(numFrets),y2:y,stroke:'#666','stroke-width':thickness});
-    // Open string note label
     const openNote=SHARP(strings[s]);
-    const bg=noteColors[openNote];
+    const bg=noteColors[nat(openNote)];
     const isRoot=roots.includes(openNote);
     T(openNote,{x:LEFT_PAD/2,y:y+3.5,fill:isRoot?(isDark(bg||'#555')?'#fff':bg||'#888'):'#444','font-size':isRoot?'9':'8','font-weight':isRoot?'600':'400'});
   }
 
   // ── Note dots ───────────────────────────────────────────
-  // For each string × fret, compute the note and draw if it's a root
   for(let s=0;s<numStrings;s++){
     const openMidi=noteToMidi(strings[s]);
     for(let f=0;f<=numFrets;f++){
@@ -741,7 +743,7 @@ function renderFretboard(){
       if(!roots.includes(note))continue;
       const cx=f===0?LEFT_PAD+NUT_W/2:xFret(f-1)+FRET_W/2+1;
       const cy=yStr(s);
-      const bg=noteColors[note]||'#c8f060';
+      const bg=noteColors[nat(note)]||'#c8f060';
       const fg=isDark(bg)?'#fff':'#111';
       S('circle',{cx,cy,r:DOT_R,fill:bg,stroke:'rgba(0,0,0,.3)','stroke-width':'0.8'});
       T(note,{x:cx,y:cy+3.5,fill:fg,'font-size':'7','font-weight':'600'});
