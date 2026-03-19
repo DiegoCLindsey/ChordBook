@@ -332,6 +332,10 @@ let DOC = { songs: [] };
 let editorSt = 0, modalTarget = null;
 let CH_W = 7.225, LH_PX = 19.2;
 
+const LS_KEY = 'chordbook_doc';
+function saveToStorage(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(DOC)); }catch(e){} }
+function loadFromStorage(){ try{ const s=localStorage.getItem(LS_KEY); if(s){ const parsed=JSON.parse(s); if(parsed&&parsed.songs) DOC=parsed; } }catch(e){} }
+
 function measureChar() {
   const r = document.getElementById('ruler');
   const rect = r.getBoundingClientRect();
@@ -411,20 +415,22 @@ function processRaw(raw,maxW,st){
   return{lines:deduped,flags};
 }
 
-// Extract unique root notes from a song (after transposition)
+// Returns Map<note, sectionCount> — sections each root appears in
 function songRootNotes(song){
-  const roots=new Set();
+  const freq=new Map();
   for(const sec of song.sections){
+    const secNotes=new Set();
     const lines=applySectionTranspose(sec,sec.semitones);
     for(let j=0;j<lines.length;j++){
       if(!sec.flags[j])continue;
       for(const tok of lines[j].split(/\s+/)){
         const r=fullRootOf(xlat(tok));
-        if(r)roots.add(r);
+        if(r)secNotes.add(r);
       }
     }
+    secNotes.forEach(n=>freq.set(n,(freq.get(n)||0)+1));
   }
-  return [...roots];
+  return freq;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -474,7 +480,7 @@ function addToDocument(){
   let song=DOC.songs.find(s=>s.title.toLowerCase()===songName.toLowerCase());
   if(song){song.sections.push(section);toast(`Sección añadida a "${song.title}".`);}
   else{song={id:uid(),title:songName,sections:[section]};DOC.songs.push(song);toast(`Canción "${songName}" creada.`);}
-  updateDocView();updateSongDatalist();
+  saveToStorage();updateDocView();updateSongDatalist();
 }
 function clearEditor(){document.getElementById('inputArea').value='';document.getElementById('sectionName').value='';document.getElementById('previewBox').innerHTML='';document.getElementById('previewStats').textContent='';editorSt=0;syncStDisplay();}
 
@@ -568,12 +574,12 @@ function changeSectionSt(songId,secId,delta){
   sec.semitones=((sec.semitones||0)+delta);if(sec.semitones>11)sec.semitones=-11;if(sec.semitones<-11)sec.semitones=11;
   const stEl=document.getElementById('secSt_'+secId);if(stEl){stEl.textContent=(sec.semitones>0?'+':'')+sec.semitones;stEl.style.color=sec.semitones?'var(--accent)':'var(--text3)';}
   const pre=document.querySelector(`[data-sec-render="${secId}"]`);if(pre)renderLinesToDom(applySectionTranspose(sec,sec.semitones),sec.flags,sec.chordColor,sec.noteColors,pre);
-  updateFretboardForVisible();
+  saveToStorage();updateFretboardForVisible();
 }
-function deleteSong(id){if(!confirm('¿Eliminar esta canción?'))return;DOC.songs=DOC.songs.filter(s=>s.id!==id);updateDocView();}
-function duplicateSong(id){const s=DOC.songs.find(x=>x.id===id);if(!s)return;const cp=JSON.parse(JSON.stringify(s));cp.id=uid();cp.title+=' (copia)';cp.sections.forEach(x=>x.id=uid());DOC.songs.splice(DOC.songs.findIndex(x=>x.id===id)+1,0,cp);updateDocView();toast('Canción duplicada.');}
-function deleteSection(songId,secId){const s=DOC.songs.find(x=>x.id===songId);if(!s)return;s.sections=s.sections.filter(x=>x.id!==secId);if(!s.sections.length){DOC.songs=DOC.songs.filter(x=>x.id!==songId);toast('Canción eliminada.');}updateDocView();}
-function duplicateSection(songId,secId){const s=DOC.songs.find(x=>x.id===songId);if(!s)return;const sec=s.sections.find(x=>x.id===secId);if(!sec)return;const cp=JSON.parse(JSON.stringify(sec));cp.id=uid();cp.name+=' (copia)';s.sections.splice(s.sections.findIndex(x=>x.id===secId)+1,0,cp);updateDocView();toast('Sección duplicada.');}
+function deleteSong(id){if(!confirm('¿Eliminar esta canción?'))return;DOC.songs=DOC.songs.filter(s=>s.id!==id);saveToStorage();updateDocView();}
+function duplicateSong(id){const s=DOC.songs.find(x=>x.id===id);if(!s)return;const cp=JSON.parse(JSON.stringify(s));cp.id=uid();cp.title+=' (copia)';cp.sections.forEach(x=>x.id=uid());DOC.songs.splice(DOC.songs.findIndex(x=>x.id===id)+1,0,cp);saveToStorage();updateDocView();toast('Canción duplicada.');}
+function deleteSection(songId,secId){const s=DOC.songs.find(x=>x.id===songId);if(!s)return;s.sections=s.sections.filter(x=>x.id!==secId);if(!s.sections.length){DOC.songs=DOC.songs.filter(x=>x.id!==songId);toast('Canción eliminada.');}saveToStorage();updateDocView();}
+function duplicateSection(songId,secId){const s=DOC.songs.find(x=>x.id===songId);if(!s)return;const sec=s.sections.find(x=>x.id===secId);if(!sec)return;const cp=JSON.parse(JSON.stringify(sec));cp.id=uid();cp.name+=' (copia)';s.sections.splice(s.sections.findIndex(x=>x.id===secId)+1,0,cp);saveToStorage();updateDocView();toast('Sección duplicada.');}
 
 // ══════════════════════════════════════════════════════════════
 // SNAP PROGRESS + scroll → fretboard sync
@@ -635,15 +641,18 @@ function renderFretboardForSong(song){
   // Collect note colors from the FIRST section that has noteColors
   let noteColors={C:'#fde68a',D:'#bbf7d0',E:'#bfdbfe',F:'#fecaca',G:'#e9d5ff',A:'#fed7aa',B:'#a5f3fc'};
   if(song.sections.length)noteColors=song.sections[0].noteColors||noteColors;
-  const roots=songRootNotes(song);
-  fbSongCache={song,roots,noteColors};
+  const rootFreq=songRootNotes(song);
+  const roots=[...rootFreq.keys()];
+  const maxFreq=Math.max(...rootFreq.values(),1);
+  fbSongCache={song,roots,rootFreq,maxFreq,noteColors};
   // Update legend + song label
   const legend=document.getElementById('fbLegend');
   legend.innerHTML='';
   roots.forEach(n=>{
     const bg=noteColors[n[0]]||'#555',fg=isDark(bg)?'#fff':'#111';
+    const op=(0.35+0.65*(rootFreq.get(n)/maxFreq)).toFixed(2);
     const pill=document.createElement('span');pill.className='fb-note-pill';
-    pill.style.cssText=`background:${bg};color:${fg};`;pill.textContent=n;
+    pill.style.cssText=`background:${bg};color:${fg};opacity:${op};`;pill.textContent=n;
     legend.appendChild(pill);
   });
   document.getElementById('fbSongLabel').textContent=song.title;
@@ -652,7 +661,8 @@ function renderFretboardForSong(song){
 
 function renderFretboard(){
   if(!fbSongCache)return;
-  const{roots,noteColors}=fbSongCache;
+  const{roots,rootFreq,maxFreq,noteColors}=fbSongCache;
+  const dotOp=n=>(0.35+0.65*((rootFreq.get(n)||0)/maxFreq)).toFixed(2);
   const inst=INSTRUMENTS[currentInstrument];
   const strings=inst.strings; // low to high
   const numStrings=strings.length;
@@ -745,8 +755,9 @@ function renderFretboard(){
       const cy=yStr(s);
       const bg=noteColors[nat(note)]||'#c8f060';
       const fg=isDark(bg)?'#fff':'#111';
-      S('circle',{cx,cy,r:DOT_R,fill:bg,stroke:'rgba(0,0,0,.3)','stroke-width':'0.8'});
-      T(note,{x:cx,y:cy+3.5,fill:fg,'font-size':'7','font-weight':'600'});
+      const op=dotOp(note);
+      S('circle',{cx,cy,r:DOT_R,fill:bg,opacity:op,stroke:'rgba(0,0,0,.3)','stroke-width':'0.8'});
+      T(note,{x:cx,y:cy+3.5,fill:fg,opacity:op,'font-size':'7','font-weight':'600'});
     }
   }
 }
@@ -811,7 +822,7 @@ function setupSongDrag(hdrEl,songId,pageEl){
     e.preventDefault();pageEl.style.outline='';
     const fromId=e.dataTransfer.getData('text/song');if(fromId===songId)return;
     const fi=DOC.songs.findIndex(s=>s.id===fromId),ti=DOC.songs.findIndex(s=>s.id===songId);
-    if(fi===-1||ti===-1)return;const[mv]=DOC.songs.splice(fi,1);DOC.songs.splice(ti,0,mv);updateDocView();
+    if(fi===-1||ti===-1)return;const[mv]=DOC.songs.splice(fi,1);DOC.songs.splice(ti,0,mv);saveToStorage();updateDocView();
   });
 }
 
@@ -832,7 +843,7 @@ function setupSectionDrag(el,songId,secId){
     const toS=DOC.songs.find(s=>s.id===songId);if(!toS)return;
     toS.sections.splice(toS.sections.findIndex(s=>s.id===secId),0,mv);
     if(!fromS.sections.length)DOC.songs=DOC.songs.filter(s=>s.id!==fromS.id);
-    updateDocView();
+    saveToStorage();updateDocView();
   });
 }
 
@@ -858,7 +869,7 @@ function saveModal(){
   sec.name=document.getElementById('modalSectionName').value.trim()||sec.name;
   const{lines,flags}=processRaw(document.getElementById('modalContent').value,sec.maxW||41,sec.semitones||0);
   sec.rawLines=lines;sec.flags=flags;
-  closeModal();updateDocView();toast('Sección actualizada.');
+  saveToStorage();closeModal();updateDocView();toast('Sección actualizada.');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -890,7 +901,7 @@ function switchTab(tab){
 function exportJSON(){download('chordbook.json',JSON.stringify(DOC,null,2),'application/json');toast('JSON exportado.');}
 function importJSON(){
   const inp=document.createElement('input');inp.type='file';inp.accept='.json';
-  inp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{DOC=JSON.parse(ev.target.result);updateDocView();updateSongDatalist();toast('Documento importado.');switchTab('document');}catch(e){toast('Error al leer el JSON.');}};r.readAsText(f);};
+  inp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{DOC=JSON.parse(ev.target.result);saveToStorage();updateDocView();updateSongDatalist();toast('Documento importado.');switchTab('document');}catch(e){toast('Error al leer el JSON.');}};r.readAsText(f);};
   inp.click();
 }
 function exportHTML(){
@@ -932,7 +943,7 @@ function updateSongDatalist(){document.getElementById('song-list').innerHTML=DOC
 
 const ro=new ResizeObserver(()=>{if(document.getElementById('docPanel').style.display!=='none')updateDocView();});
 ro.observe(document.getElementById('docCanvas'));
-window.addEventListener('load',()=>{measureChar();updatePreview();});
+window.addEventListener('load',()=>{measureChar();loadFromStorage();updateSongDatalist();updatePreview();});
 </script>
 </body>
 </html>
