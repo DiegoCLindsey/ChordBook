@@ -565,13 +565,24 @@ function updatePreview(){
 function addToDocument(){
   const raw=document.getElementById('inputArea').value.trim();if(!raw){toast('Pega algo de letra primero.');return;}
   const songName=document.getElementById('songName').value.trim();if(!songName){toast('Pon el nombre de la canción.');return;}
-  const sectionName=document.getElementById('sectionName').value.trim()||'Sección';
+  const baseName=document.getElementById('sectionName').value.trim()||'Sección';
   const maxW=parseInt(document.getElementById('maxWidth').value)||41;
-  const{lines,flags}=processRaw(raw,maxW,editorSt);
-  const section={id:uid(),name:sectionName,rawLines:lines,flags,semitones:editorSt,chordColor:document.getElementById('chordColor').value,noteColors:getEditorColors(),maxW};
+  const chordColor=document.getElementById('chordColor').value;
+  const noteColors=getEditorColors();
+  // Dividir por líneas separadoras (3 o más guiones)
+  const chunks=raw.split(/^[ \t]*-{3,}[ \t]*$/m).map(c=>c.trim()).filter(Boolean);
   let song=DOC.songs.find(s=>s.title.toLowerCase()===songName.toLowerCase());
-  if(song){song.sections.push(section);toast(`Sección añadida a "${song.title}".`);}
-  else{song={id:uid(),title:songName,sections:[section]};DOC.songs.push(song);toast(`Canción "${songName}" creada.`);}
+  if(chunks.length<=1){
+    const{lines,flags}=processRaw(raw,maxW,editorSt);
+    const section={id:uid(),name:baseName,rawLines:lines,flags,semitones:editorSt,chordColor,noteColors,maxW};
+    if(song){song.sections.push(section);toast(`Sección añadida a "${song.title}".`);}
+    else{song={id:uid(),title:songName,sections:[section]};DOC.songs.push(song);toast(`Canción "${songName}" creada.`);}
+  }else{
+    const sections=chunks.map((chunk,i)=>{const{lines,flags}=processRaw(chunk,maxW,editorSt);return{id:uid(),name:`${baseName} ${i+1}`,rawLines:lines,flags,semitones:editorSt,chordColor,noteColors,maxW};});
+    if(song){sections.forEach(s=>song.sections.push(s));}
+    else{song={id:uid(),title:songName,sections};DOC.songs.push(song);}
+    toast(`${sections.length} secciones añadidas a "${songName}".`);
+  }
   saveToStorage();updateDocView();updateSongDatalist();
 }
 function clearEditor(){document.getElementById('inputArea').value='';document.getElementById('sectionName').value='';document.getElementById('previewBox').innerHTML='';document.getElementById('previewStats').textContent='';editorSt=0;syncStDisplay();}
