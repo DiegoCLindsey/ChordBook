@@ -621,7 +621,12 @@ function updateDocView(){
   const gap=parseInt(document.getElementById('colGap').value)||10;
   const pageH=getPageH(),headerH=38,usableH=pageH-headerH;
   const canvasW=canvas.clientWidth||window.innerWidth;
-  DOC.songs.forEach((song,idx)=>canvas.appendChild(buildSongPage(song,idx,DOC.songs.length,fs,gap,pageH,usableH,canvasW)));
+  const colCountVal=parseInt(document.getElementById('colCount').value)||0;
+  // Paso 1: construir páginas con secciones apiladas (sin columnas) para medir alturas reales
+  const pages=DOC.songs.map((song,idx)=>buildSongPage(song,idx,DOC.songs.length,fs,gap,usableH,canvasW,colCountVal));
+  pages.forEach(p=>canvas.appendChild(p));
+  // Paso 2: medir alturas reales y aplicar layout de columnas
+  pages.forEach(p=>finalizeSongLayout(p));
   const total=DOC.songs.reduce((a,s)=>a+s.sections.length,0);
   document.getElementById('docStats').textContent=`${DOC.songs.length} canciones · ${total} secciones`;
   document.getElementById('snapProgress').style.display='block';
@@ -630,29 +635,49 @@ function updateDocView(){
   requestAnimationFrame(updateFretboardForVisible);
 }
 
-function buildSongPage(song,idx,total,fs,gap,pageH,usableH,canvasW){
+function buildSongPage(song,idx,total,fs,gap,usableH,canvasW,colCountVal){
   const page=document.createElement('div');page.className='snap-page';page.dataset.songId=song.id;
-  const secHeights=song.sections.map(sec=>estimateSectionH(sec,fs));
-  const colCountVal=parseInt(document.getElementById('colCount').value)||0;
-  // colW: ancho de cada columna según selector (auto = divide en 2 columnas de base)
-  const baseColW=colCountVal>0
-    ?Math.floor((canvasW-gap*(colCountVal+1))/colCountVal)
-    :Math.floor((canvasW-gap*3)/2);
-  // binPack siempre determina cuántas columnas se necesitan por altura
-  const cols=binPack(secHeights,usableH);
-  const numCols=cols.length;
-  // Si hay más columnas de las que caben en pantalla, colW se mantiene fijo (scroll)
-  // Si hay menos, en modo auto se expanden para llenar el ancho disponible
-  const colW=colCountVal>0?baseColW:Math.max(baseColW,Math.floor((canvasW-gap*(numCols+1))/numCols));
   const hdr=document.createElement('div');hdr.className='song-page-header';hdr.draggable=true;
   hdr.innerHTML=`<span class="drag-handle">⠿</span><span class="song-page-title">${esc(song.title)}</span><div class="song-page-actions"><button class="icon-btn" title="Duplicar" onclick="duplicateSong('${song.id}')">⧉</button><button class="icon-btn danger" title="Eliminar" onclick="deleteSong('${song.id}')">✕</button></div>`;
   page.appendChild(hdr);
-  const area=document.createElement('div');area.className='song-sections-area';
-  cols.forEach(colSecIdxs=>{const col=document.createElement('div');col.className='section-col';col.style.width=colW+'px';col.style.minWidth=colW+'px';col.style.paddingTop=gap+'px';col.style.gap=gap+'px';colSecIdxs.forEach(si=>col.appendChild(buildSectionBlock(song.id,song.sections[si],fs)));area.appendChild(col);});
+  // Renderizar secciones en columna temporal para medir alturas reales
+  const area=document.createElement('div');area.className='song-sections-area';area.style.flexDirection='column';area.style.overflow='visible';
+  const blocks=song.sections.map(sec=>buildSectionBlock(song.id,sec,fs));
+  blocks.forEach(b=>area.appendChild(b));
   page.appendChild(area);
   const pn=document.createElement('div');pn.className='page-num';pn.textContent=`${idx+1} / ${total}`;page.appendChild(pn);
   setupSongDrag(hdr,song.id,page);
+  // Guardar contexto para el paso 2
+  page._layout={blocks,gap,usableH,canvasW,colCountVal};
   return page;
+}
+
+function finalizeSongLayout(page){
+  const ctx=page._layout;if(!ctx)return;
+  delete page._layout;
+  const{blocks,gap,usableH,canvasW,colCountVal}=ctx;
+  const area=page.querySelector('.song-sections-area');
+  if(!blocks.length){area.style.flexDirection='';area.style.overflow='';return;}
+  // Medir alturas reales en el DOM (fuerza layout)
+  // Cada slot efectivo = altura_bloque + gap (espacio entre secciones)
+  const heights=blocks.map(b=>b.getBoundingClientRect().height+gap);
+  // binPack con alturas reales; usableH cubre el espacio de la zona de secciones
+  const cols=binPack(heights,usableH);
+  const numCols=Math.max(cols.length,1);
+  const baseColW=colCountVal>0
+    ?Math.floor((canvasW-gap*(colCountVal+1))/colCountVal)
+    :Math.floor((canvasW-gap*3)/2);
+  const colW=colCountVal>0?baseColW:Math.max(baseColW,Math.floor((canvasW-gap*(numCols+1))/numCols));
+  // Reconstruir area con columnas reales
+  area.style.flexDirection='';area.style.overflow='';
+  blocks.forEach(b=>b.parentNode&&b.parentNode.removeChild(b));
+  cols.forEach(secIdxs=>{
+    const col=document.createElement('div');col.className='section-col';
+    col.style.width=colW+'px';col.style.minWidth=colW+'px';
+    col.style.paddingTop=gap+'px';col.style.gap=gap+'px';
+    secIdxs.forEach(si=>col.appendChild(blocks[si]));
+    area.appendChild(col);
+  });
 }
 
 function buildSectionBlock(songId,sec,fs){
