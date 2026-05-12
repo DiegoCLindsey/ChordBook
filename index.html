@@ -74,6 +74,8 @@ input[type=color] { width: 28px; height: 28px; padding: 2px; cursor: pointer; bo
 .tb-ctrl input[type=number] { width: 52px; font-family: var(--mono); font-size: 12px; background: var(--surface3); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px 7px; outline: none; transition: border-color .15s; }
 .tb-ctrl input[type=number]:focus { border-color: var(--accent); }
 .tb-ctrl input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+.tb-ctrl select { font-family: var(--mono); font-size: 12px; background: var(--surface3); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px 6px; outline: none; cursor: pointer; }
+.tb-ctrl select:focus { border-color: var(--accent); }
 .sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
 
 /* ── DOC CANVAS + SNAP SCROLL ──────────────────────────────── */
@@ -342,6 +344,19 @@ input[type=color] { width: 28px; height: 28px; padding: 2px; cursor: pointer; bo
           <span id="heightUnitLabel" style="font-size:11px;color:var(--text2);display:none;">px</span>
         </div>
         <div class="sep"></div>
+        <label>Columnas:</label>
+        <div class="tb-ctrl">
+          <select id="colCount" onchange="updateDocView()">
+            <option value="0">Auto</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+          </select>
+        </div>
+        <div class="sep"></div>
         <span id="docStats" style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-left:auto;"></span>
       </div>
       <div class="doc-canvas" id="docCanvas">
@@ -584,6 +599,14 @@ function binPack(heights,binH){
   }
   return cols;
 }
+function distributeColumns(numSections,numCols){
+  if(!numSections)return[[]];
+  const n=Math.min(numCols,numSections);
+  const base=Math.floor(numSections/n),extra=numSections%n;
+  const cols=[];let idx=0;
+  for(let c=0;c<n;c++){const count=base+(c<extra?1:0);const col=[];for(let i=0;i<count;i++)col.push(idx++);cols.push(col);}
+  return cols;
+}
 function applySectionTranspose(sec,st){if(!st)return sec.rawLines;return sec.rawLines.map((l,j)=>sec.flags[j]?transpLine(l,st):l);}
 
 // ══════════════════════════════════════════════════════════════
@@ -610,7 +633,9 @@ function updateDocView(){
 function buildSongPage(song,idx,total,fs,gap,pageH,usableH,canvasW){
   const page=document.createElement('div');page.className='snap-page';page.style.height=pageH+'px';page.dataset.songId=song.id;
   const secHeights=song.sections.map(sec=>estimateSectionH(sec,fs));
-  const cols=binPack(secHeights,usableH);const numCols=cols.length;
+  const colCountVal=parseInt(document.getElementById('colCount').value)||0;
+  const cols=colCountVal>0?distributeColumns(song.sections.length,colCountVal):binPack(secHeights,usableH);
+  const numCols=cols.length;
   const hdr=document.createElement('div');hdr.className='song-page-header';hdr.draggable=true;
   hdr.innerHTML=`<span class="drag-handle">⠿</span><span class="song-page-title">${esc(song.title)}</span>${numCols>1?`<span class="song-page-meta">${numCols} col</span>`:''}<div class="song-page-actions"><button class="icon-btn" title="Duplicar" onclick="duplicateSong('${song.id}')">⧉</button><button class="icon-btn danger" title="Eliminar" onclick="deleteSong('${song.id}')">✕</button></div>`;
   page.appendChild(hdr);
@@ -992,7 +1017,8 @@ function exportHTML(){
   let pagesHtml='';
   DOC.songs.forEach((song,idx)=>{
     const secHeights=song.sections.map(sec=>estimateSectionH(sec,fs));
-    const cols=binPack(secHeights,usableH);const numCols=cols.length;
+    const colCountVal=parseInt(document.getElementById('colCount').value)||0;
+    const cols=colCountVal>0?distributeColumns(song.sections.length,colCountVal):binPack(secHeights,usableH);const numCols=cols.length;
     pagesHtml+=`<div class="snap-page"><div class="song-header"><span class="song-title">${esc(song.title)}</span>${numCols>1?`<span class="meta">${numCols} col</span>`:''}<span class="page-n">${idx+1}/${DOC.songs.length}</span></div><div class="sec-area" style="gap:${gap}px;padding:0 ${gap}px ${gap}px;">`;
     cols.forEach(colSecIdxs=>{
       pagesHtml+=`<div class="sec-col" style="padding-top:${gap}px;gap:${gap}px;">`;
