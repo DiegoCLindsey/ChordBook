@@ -87,7 +87,7 @@ input[type=color] { width: 28px; height: 28px; padding: 2px; cursor: pointer; bo
 .song-page-title { font-size: 14px; font-weight: 800; color: var(--accent); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .song-page-meta { font-family: var(--mono); font-size: 10px; color: var(--text3); flex-shrink: 0; }
 .song-page-actions { display: flex; gap: 5px; flex-shrink: 0; }
-.song-sections-area { flex: 1; display: flex; flex-direction: row; overflow: hidden; }
+.song-sections-area { flex: 1; display: flex; flex-direction: row; overflow-x: auto; overflow-y: hidden; min-height: 0; }
 .section-col { display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; border-right: 1px solid var(--border); }
 .section-col:last-child { border-right: none; }
 .section-block { flex-shrink: 0; border-bottom: 1px solid var(--border); padding: 7px 10px 6px; display: flex; gap: 7px; align-items: flex-start; transition: background .12s; }
@@ -634,14 +634,21 @@ function buildSongPage(song,idx,total,fs,gap,pageH,usableH,canvasW){
   const page=document.createElement('div');page.className='snap-page';page.style.height=pageH+'px';page.dataset.songId=song.id;
   const secHeights=song.sections.map(sec=>estimateSectionH(sec,fs));
   const colCountVal=parseInt(document.getElementById('colCount').value)||0;
-  const cols=colCountVal>0?distributeColumns(song.sections.length,colCountVal):binPack(secHeights,usableH);
+  // colW: ancho de cada columna según selector (auto = divide en 2 columnas de base)
+  const baseColW=colCountVal>0
+    ?Math.floor((canvasW-gap*(colCountVal+1))/colCountVal)
+    :Math.floor((canvasW-gap*3)/2);
+  // binPack siempre determina cuántas columnas se necesitan por altura
+  const cols=binPack(secHeights,usableH);
   const numCols=cols.length;
+  // Si hay más columnas de las que caben en pantalla, colW se mantiene fijo (scroll)
+  // Si hay menos, en modo auto se expanden para llenar el ancho disponible
+  const colW=colCountVal>0?baseColW:Math.max(baseColW,Math.floor((canvasW-gap*(numCols+1))/numCols));
   const hdr=document.createElement('div');hdr.className='song-page-header';hdr.draggable=true;
-  hdr.innerHTML=`<span class="drag-handle">⠿</span><span class="song-page-title">${esc(song.title)}</span>${numCols>1?`<span class="song-page-meta">${numCols} col</span>`:''}<div class="song-page-actions"><button class="icon-btn" title="Duplicar" onclick="duplicateSong('${song.id}')">⧉</button><button class="icon-btn danger" title="Eliminar" onclick="deleteSong('${song.id}')">✕</button></div>`;
+  hdr.innerHTML=`<span class="drag-handle">⠿</span><span class="song-page-title">${esc(song.title)}</span><div class="song-page-actions"><button class="icon-btn" title="Duplicar" onclick="duplicateSong('${song.id}')">⧉</button><button class="icon-btn danger" title="Eliminar" onclick="deleteSong('${song.id}')">✕</button></div>`;
   page.appendChild(hdr);
-  const colW=Math.floor((canvasW-gap*(numCols+1))/numCols);
-  const area=document.createElement('div');area.className='song-sections-area';area.style.gap=gap+'px';area.style.padding=`0 ${gap}px ${gap}px`;
-  cols.forEach(colSecIdxs=>{const col=document.createElement('div');col.className='section-col';col.style.width=colW+'px';col.style.paddingTop=gap+'px';col.style.gap=gap+'px';colSecIdxs.forEach(si=>col.appendChild(buildSectionBlock(song.id,song.sections[si],fs)));area.appendChild(col);});
+  const area=document.createElement('div');area.className='song-sections-area';
+  cols.forEach(colSecIdxs=>{const col=document.createElement('div');col.className='section-col';col.style.width=colW+'px';col.style.minWidth=colW+'px';col.style.paddingTop=gap+'px';col.style.gap=gap+'px';colSecIdxs.forEach(si=>col.appendChild(buildSectionBlock(song.id,song.sections[si],fs)));area.appendChild(col);});
   page.appendChild(area);
   const pn=document.createElement('div');pn.className='page-num';pn.textContent=`${idx+1} / ${total}`;page.appendChild(pn);
   setupSongDrag(hdr,song.id,page);
@@ -1015,13 +1022,16 @@ function exportHTML(){
   const gap=parseInt(document.getElementById('colGap').value)||10;
   const pageH=getPageH(),headerH=38,usableH=pageH-headerH;
   let pagesHtml='';
+  const canvasW=document.getElementById('docCanvas').clientWidth||window.innerWidth;
+  const colCountVal=parseInt(document.getElementById('colCount').value)||0;
+  const baseColW=colCountVal>0?Math.floor((canvasW-gap*(colCountVal+1))/colCountVal):Math.floor((canvasW-gap*3)/2);
   DOC.songs.forEach((song,idx)=>{
     const secHeights=song.sections.map(sec=>estimateSectionH(sec,fs));
-    const colCountVal=parseInt(document.getElementById('colCount').value)||0;
-    const cols=colCountVal>0?distributeColumns(song.sections.length,colCountVal):binPack(secHeights,usableH);const numCols=cols.length;
-    pagesHtml+=`<div class="snap-page"><div class="song-header"><span class="song-title">${esc(song.title)}</span>${numCols>1?`<span class="meta">${numCols} col</span>`:''}<span class="page-n">${idx+1}/${DOC.songs.length}</span></div><div class="sec-area" style="gap:${gap}px;padding:0 ${gap}px ${gap}px;">`;
+    const cols=binPack(secHeights,usableH);const numCols=cols.length;
+    const colW=colCountVal>0?baseColW:Math.max(baseColW,Math.floor((canvasW-gap*(numCols+1))/numCols));
+    pagesHtml+=`<div class="snap-page"><div class="song-header"><span class="song-title">${esc(song.title)}</span><span class="page-n">${idx+1}/${DOC.songs.length}</span></div><div class="sec-area">`;
     cols.forEach(colSecIdxs=>{
-      pagesHtml+=`<div class="sec-col" style="padding-top:${gap}px;gap:${gap}px;">`;
+      pagesHtml+=`<div class="sec-col" style="width:${colW}px;min-width:${colW}px;padding-top:${gap}px;gap:${gap}px;">`;
       colSecIdxs.forEach(si=>{
         const sec=song.sections[si];const lines=applySectionTranspose(sec,sec.semitones);const M='== [ ESTRIBILLO ] ==';let content='';
         lines.forEach((line,j)=>{
@@ -1035,7 +1045,7 @@ function exportHTML(){
     });
     pagesHtml+='</div></div>';
   });
-  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>ChordBook</title><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0;}html,body{height:100%;background:#fff;color:#111;font-family:'IBM Plex Mono',monospace;}.doc{height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory;scroll-behavior:smooth;}.snap-page{scroll-snap-align:start;scroll-snap-stop:always;height:100vh;display:flex;flex-direction:column;overflow:hidden;border-bottom:1px solid #eee;}.song-header{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#f5f5f0;border-bottom:1px solid #ddd;flex-shrink:0;}.song-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:800;flex:1;}.meta{font-size:9px;color:#aaa;font-family:monospace;}.page-n{font-size:9px;color:#bbb;font-family:monospace;margin-left:auto;}.sec-area{flex:1;display:flex;overflow:hidden;}.sec-col{display:flex;flex-direction:column;flex:1;overflow:hidden;border-right:1px solid #eee;}.sec-col:last-child{border-right:none;}.sec-block{flex-shrink:0;padding:7px 10px 6px;border-bottom:1px solid #eee;}.sec-block:last-child{border-bottom:none;}.sec-badge{font-family:'Syne',sans-serif;font-size:8px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#f0a060;color:#fff;border-radius:3px;padding:1px 5px;display:inline-block;margin-bottom:4px;}.sec-text{font-family:'IBM Plex Mono',monospace;line-height:1.6;white-space:pre;}@media print{html,body{height:auto;}.doc{height:auto;overflow:visible;scroll-snap-type:none;}.snap-page{height:auto;page-break-after:always;break-after:page;}.sec-area{flex-wrap:wrap;}}</style></head><body><div class="doc">${pagesHtml}</div></body></html>`;
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>ChordBook</title><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0;}html,body{height:100%;background:#fff;color:#111;font-family:'IBM Plex Mono',monospace;}.doc{height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory;scroll-behavior:smooth;}.snap-page{scroll-snap-align:start;scroll-snap-stop:always;height:100vh;display:flex;flex-direction:column;overflow:hidden;border-bottom:1px solid #eee;}.song-header{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#f5f5f0;border-bottom:1px solid #ddd;flex-shrink:0;}.song-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:800;flex:1;}.page-n{font-size:9px;color:#bbb;font-family:monospace;margin-left:auto;}.sec-area{flex:1;display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;}.sec-col{display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;border-right:1px solid #eee;}.sec-col:last-child{border-right:none;}.sec-block{flex-shrink:0;padding:7px 10px 6px;border-bottom:1px solid #eee;}.sec-block:last-child{border-bottom:none;}.sec-badge{font-family:'Syne',sans-serif;font-size:8px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#f0a060;color:#fff;border-radius:3px;padding:1px 5px;display:inline-block;margin-bottom:4px;}.sec-text{font-family:'IBM Plex Mono',monospace;line-height:1.6;white-space:pre;}@media print{html,body{height:auto;}.doc{height:auto;overflow:visible;scroll-snap-type:none;}.snap-page{height:auto;page-break-after:always;break-after:page;}.sec-area{flex-wrap:wrap;}}</style></head><body><div class="doc">${pagesHtml}</div></body></html>`;
   download('chordbook.html',html,'text/html');toast('HTML exportado.');
 }
 function download(name,content,mime){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type:mime}));a.download=name;a.click();}
