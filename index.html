@@ -80,7 +80,7 @@ input[type=color] { width: 28px; height: 28px; padding: 2px; cursor: pointer; bo
 
 /* ── DOC CANVAS + SNAP SCROLL ──────────────────────────────── */
 .doc-canvas { flex: 1; overflow-y: scroll; overflow-x: hidden; scroll-snap-type: y mandatory; scroll-behavior: smooth; background: var(--bg); position: relative; min-height: 0; }
-.snap-page { scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid var(--border2); position: relative; }
+.snap-page { scroll-snap-align: start; scroll-snap-stop: always; height: 100%; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid var(--border2); position: relative; }
 .snap-page:last-child { border-bottom: none; }
 .song-page-header { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--surface2); border-bottom: 1px solid var(--border); flex-shrink: 0; user-select: none; }
 .drag-handle { color: var(--text3); font-size: 12px; cursor: grab; flex-shrink: 0; }
@@ -597,7 +597,7 @@ function binPack(heights,binH){
     for(let c=0;c<colH.length;c++){if(colH[c]+h<=binH){cols[c].push(i);colH[c]+=h;placed=true;break;}}
     if(!placed){cols.push([i]);colH.push(h);}
   }
-  return cols;
+  return cols.filter(c=>c.length>0);
 }
 function distributeColumns(numSections,numCols){
   if(!numSections)return[[]];
@@ -631,7 +631,7 @@ function updateDocView(){
 }
 
 function buildSongPage(song,idx,total,fs,gap,pageH,usableH,canvasW){
-  const page=document.createElement('div');page.className='snap-page';page.style.height=pageH+'px';page.dataset.songId=song.id;
+  const page=document.createElement('div');page.className='snap-page';page.dataset.songId=song.id;
   const secHeights=song.sections.map(sec=>estimateSectionH(sec,fs));
   const colCountVal=parseInt(document.getElementById('colCount').value)||0;
   // colW: ancho de cada columna según selector (auto = divide en 2 columnas de base)
