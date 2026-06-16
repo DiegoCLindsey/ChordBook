@@ -562,9 +562,9 @@ function songRootNotes(song){
   const freq=new Map();
   for(const sec of song.sections){
     const secNotes=new Set();
-    const lines=applySectionTranspose(sec,sec.semitones);
+    const{lines,flags}=getSectionDisplay(sec);
     for(let j=0;j<lines.length;j++){
-      if(!sec.flags[j])continue;
+      if(!flags[j])continue;
       for(const tok of lines[j].split(/\s+/)){
         const r=fullRootOf(xlat(tok));
         if(r)secNotes.add(r);
@@ -661,8 +661,7 @@ function addToDocument(){
   if(cpSecs){
     if(!song){song={id:uid(),title:songName,sections:[]};DOC.songs.push(song);}
     cpSecs.forEach(cp=>{
-      const{lines,flags}=processRaw(cp.raw,maxW,editorSt);
-      song.sections.push({id:uid(),name:cp.name,rawLines:lines,flags,semitones:editorSt,chordColor,noteColors,maxW,collapsed:cp.collapsed});
+      song.sections.push({id:uid(),name:cp.name,rawText:cp.raw,semitones:editorSt,chordColor,noteColors,maxW,collapsed:cp.collapsed});
     });
     toast(`${cpSecs.length} secciones añadidas a "${songName}".`);
   }else{
@@ -670,12 +669,11 @@ function addToDocument(){
     const chunks=raw.split(/^[ \t]*-{3,}[ \t]*$/m).map(c=>c.trim()).filter(Boolean);
     if(chunks.length<=1){
       const collapsed=raw.split('\n').some(l=>l.trim()==='{collapse}');
-      const{lines,flags}=processRaw(raw,maxW,editorSt);
-      const section={id:uid(),name:baseName,rawLines:lines,flags,semitones:editorSt,chordColor,noteColors,maxW,collapsed};
+      const section={id:uid(),name:baseName,rawText:raw,semitones:editorSt,chordColor,noteColors,maxW,collapsed};
       if(song){song.sections.push(section);toast(`Sección añadida a "${song.title}".`);}
       else{song={id:uid(),title:songName,sections:[section]};DOC.songs.push(song);toast(`Canción "${songName}" creada.`);}
     }else{
-      const sections=chunks.map((chunk,i)=>{const{lines,flags}=processRaw(chunk,maxW,editorSt);return{id:uid(),name:`${baseName} ${i+1}`,rawLines:lines,flags,semitones:editorSt,chordColor,noteColors,maxW,collapsed:false};});
+      const sections=chunks.map((chunk,i)=>({id:uid(),name:`${baseName} ${i+1}`,rawText:chunk,semitones:editorSt,chordColor,noteColors,maxW,collapsed:false}));
       if(song){sections.forEach(s=>song.sections.push(s));}
       else{song={id:uid(),title:songName,sections};DOC.songs.push(song);}
       toast(`${sections.length} secciones añadidas a "${songName}".`);
@@ -706,6 +704,12 @@ function onSnapToggle(){
   else if(DOC.songs.length){prog.style.display='block';updateSnapProgress();}
 }
 function applySectionTranspose(sec,st){if(!st)return sec.rawLines;return sec.rawLines.map((l,j)=>sec.flags[j]?transpLine(l,st):l);}
+function getSectionDisplay(sec){
+  if(sec.rawText!==undefined)return processRaw(sec.rawText,sec.maxW||41,sec.semitones||0);
+  // backward compat: rawLines already pre-processed, apply additional semitones
+  const st=sec.semitones||0;
+  return{lines:st?sec.rawLines.map((l,j)=>sec.flags[j]?transpLine(l,st):l):[...sec.rawLines],flags:[...sec.flags]};
+}
 
 // ══════════════════════════════════════════════════════════════
 // DOCUMENT VIEW
@@ -744,7 +748,8 @@ function buildSectionBlock(songId,sec,fs){
   const body=document.createElement('div');body.className='sec-body';
   const badge=document.createElement('div');badge.className='sec-badge';badge.textContent=sec.name;badge.onclick=()=>toggleSectionCollapse(songId,sec.id);body.appendChild(badge);
   const pre=document.createElement('div');pre.className='sec-text';pre.dataset.secRender=sec.id;pre.style.fontSize=fs+'px';
-  renderLinesToDom(applySectionTranspose(sec,sec.semitones),sec.flags,sec.chordColor,sec.noteColors,pre);
+  const{lines:_sl,flags:_sf}=getSectionDisplay(sec);
+  renderLinesToDom(_sl,_sf,sec.chordColor,sec.noteColors,pre);
   body.appendChild(pre);block.appendChild(body);
   const ctrl=document.createElement('div');ctrl.className='sec-ctrl';
   const it=document.createElement('div');it.className='inline-st';
@@ -765,7 +770,7 @@ function changeSectionSt(songId,secId,delta){
   const sec=song.sections.find(s=>s.id===secId);if(!sec)return;
   sec.semitones=((sec.semitones||0)+delta);if(sec.semitones>11)sec.semitones=-11;if(sec.semitones<-11)sec.semitones=11;
   const stEl=document.getElementById('secSt_'+secId);if(stEl){stEl.textContent=(sec.semitones>0?'+':'')+sec.semitones;stEl.style.color=sec.semitones?'var(--accent)':'var(--text3)';}
-  const pre=document.querySelector(`[data-sec-render="${secId}"]`);if(pre)renderLinesToDom(applySectionTranspose(sec,sec.semitones),sec.flags,sec.chordColor,sec.noteColors,pre);
+  const pre=document.querySelector(`[data-sec-render="${secId}"]`);if(pre){const{lines:_cl,flags:_cf}=getSectionDisplay(sec);renderLinesToDom(_cl,_cf,sec.chordColor,sec.noteColors,pre);}
   saveToStorage();updateFretboardForVisible();
 }
 function deleteSong(id){if(!confirm('¿Eliminar esta canción?'))return;DOC.songs=DOC.songs.filter(s=>s.id!==id);saveToStorage();updateDocView();}
@@ -1050,7 +1055,7 @@ function openModal(songId,secId){
   modalTarget={songId,secId};
   document.getElementById('modalTitle').textContent=`Editar — ${song.title} / ${sec.name}`;
   document.getElementById('modalSectionName').value=sec.name;
-  document.getElementById('modalContent').value=sec.rawLines.join('\n');
+  document.getElementById('modalContent').value=sec.rawText!==undefined?sec.rawText:(sec.rawLines||[]).join('\n');
   document.getElementById('modalOverlay').style.display='flex';
 }
 function closeModal(){document.getElementById('modalOverlay').style.display='none';modalTarget=null;}
@@ -1061,8 +1066,9 @@ function saveModal(){
   const song=DOC.songs.find(s=>s.id===songId);if(!song)return;
   const sec=song.sections.find(s=>s.id===secId);if(!sec)return;
   sec.name=document.getElementById('modalSectionName').value.trim()||sec.name;
-  const{lines,flags}=processRaw(document.getElementById('modalContent').value,sec.maxW||41,sec.semitones||0);
-  sec.rawLines=lines;sec.flags=flags;
+  sec.rawText=document.getElementById('modalContent').value;
+  // rawLines/flags no longer needed once rawText is set
+  delete sec.rawLines;delete sec.flags;
   saveToStorage();closeModal();updateDocView();toast('Sección actualizada.');
 }
 
@@ -1107,10 +1113,10 @@ function exportHTML(){
   DOC.songs.forEach((song,idx)=>{
     pagesHtml+=`<div class="snap-page"><div class="song-header"><span class="song-title">${esc(song.title)}</span><span class="page-n">${idx+1}/${DOC.songs.length}</span></div><div class="sec-area" style="gap:${gap}px;padding-top:${gap}px;">`;
     song.sections.forEach(sec=>{
-      const lines=applySectionTranspose(sec,sec.semitones);const M='== [ ESTRIBILLO ] ==';let content='';
+      const{lines,flags:_ef}=getSectionDisplay(sec);const M='== [ ESTRIBILLO ] ==';let content='';
       lines.forEach((line,j)=>{
         if(line.trim()===M){content+=`<span style="color:${esc(sec.chordColor)};font-weight:600;opacity:.7;">${esc(line)}</span><br>`;return;}
-        if(sec.flags[j]){const parts=line.split(/(\s+)/).map(tok=>{if(!tok.trim())return tok.replace(/ /g,'&nbsp;');const root=rootOf(xlat(tok));if(root&&sec.noteColors[root]){const bg=sec.noteColors[root],fg=isDark(bg)?'#fff':'#111';return`<span style="background:${bg};color:${fg};border-radius:2px;padding:0 2px;">${esc(tok)}</span>`;}return esc(tok);});content+=`<span style="color:${esc(sec.chordColor)};">${parts.join('')}</span><br>`;}
+        if(_ef[j]){const parts=line.split(/(\s+)/).map(tok=>{if(!tok.trim())return tok.replace(/ /g,'&nbsp;');const root=rootOf(xlat(tok));if(root&&sec.noteColors[root]){const bg=sec.noteColors[root],fg=isDark(bg)?'#fff':'#111';return`<span style="background:${bg};color:${fg};border-radius:2px;padding:0 2px;">${esc(tok)}</span>`;}return esc(tok);});content+=`<span style="color:${esc(sec.chordColor)};">${parts.join('')}</span><br>`;}
         else content+=esc(line)+'<br>';
       });
       pagesHtml+=`<div class="sec-block"><div class="sec-badge">${esc(sec.name)}</div><div class="sec-text" style="font-size:${fs}px;">${content}</div></div>`;
