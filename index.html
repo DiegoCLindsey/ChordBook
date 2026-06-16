@@ -464,6 +464,38 @@ function transpTok(t,st){if(!st)return t;const m=xlat(t).match(/^([A-G][#b]?)(.*
 function transpLine(l,st){if(!st)return l;return l.replace(/\S+/g,t=>{const m=xlat(t).match(/^([A-G][#b]?)/);return m?transpTok(t,st):t;});}
 function isDark(hex){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return(r*299+g*587+b*114)/1000<128;}
 
+// ── ChordPro support ─────────────────────────────────────────
+function isChordProLine(l){return /\[[A-G][#b]?[^\]]*\]/.test(l);}
+function parseChordPro(line,st){
+  // Split into segments: each [Chord]text block
+  const segs=[];
+  let prefixEnd=line.search(/\[[A-G][#b]?[^\]]*\]/);
+  const prefix=prefixEnd>0?line.slice(0,prefixEnd):'';
+  const re=/\[([^\]]+)\]([^\[]*)/g;let m;
+  while((m=re.exec(line))!==null){
+    let chord=xlat(m[1].trim());
+    if(st&&isChordTok(chord))chord=transpTok(chord,st);
+    segs.push({chord,text:m[2]});
+  }
+  let chordLine=' '.repeat(prefix.length),lyricLine=prefix;
+  for(let i=0;i<segs.length;i++){
+    const{chord,text}=segs[i];const isLast=i===segs.length-1;
+    const width=(text.length===0&&!isLast)?chord.length+1:Math.max(chord.length,text.length);
+    chordLine+=chord.padEnd(width);lyricLine+=text.padEnd(width);
+  }
+  return{chordLine:chordLine.trimEnd(),lyricLine:lyricLine.trimEnd()};
+}
+function processChordProDirective(line){
+  const m=line.match(/^\{([^:}]+)(?::([^}]*))?\}$/);if(!m)return null;
+  const dir=m[1].trim().toLowerCase(),val=m[2]?m[2].trim():'';
+  if(dir==='title'||dir==='t'||dir==='subtitle'||dir==='st')return{skip:true};
+  if(dir==='comment'||dir==='c'||dir==='comment_italic'||dir==='ci'||dir==='comment_box'||dir==='cb')return{text:val};
+  if(dir==='start_of_chorus'||dir==='soc')return{chorus:true};
+  if(dir==='end_of_chorus'||dir==='eoc')return{skip:true};
+  return{skip:true};
+}
+// ─────────────────────────────────────────────────────────────
+
 function wrapPair(cl,ll,maxW){
   const len=Math.max(cl.length,ll.length),c=cl.padEnd(len),l=ll.padEnd(len);
   if(len<=maxW)return[[cl.trimEnd(),ll.trimEnd()]];
@@ -496,7 +528,27 @@ function processRaw(raw,maxW,st){
   const lines=raw.split('\n');const outL=[],outF=[];let i=0;
   while(i<lines.length){
     const line=lines[i];
+    // ChordPro: skip comment lines
+    if(line.startsWith('#')){i++;continue;}
+    // ChordPro: handle directives like {title:...}, {soc}, {comment:...}
+    if(/^\{[^}]+\}$/.test(line.trim())){
+      const d=processChordProDirective(line.trim());
+      if(d){
+        if(d.chorus){outL.push('== [ ESTRIBILLO ] ==');outF.push(false);}
+        else if(d.text){outL.push(d.text);outF.push(false);}
+      }
+      i++;continue;
+    }
     if(line.trim()==='== [ ESTRIBILLO ] =='){outL.push(line);outF.push(false);i++;continue;}
+    // ChordPro: inline [Chord]lyric format
+    if(isChordProLine(line)){
+      const{chordLine,lyricLine}=parseChordPro(line,st);
+      if(lyricLine.trim()){
+        const pairs=wrapPair(chordLine,lyricLine,maxW);
+        for(const[c,l]of pairs){if(c.trim()){outL.push(c);outF.push(true);}outL.push(l);outF.push(false);}
+      }else if(chordLine.trim()){outL.push(chordLine);outF.push(true);}
+      i++;continue;
+    }
     if(isChordLine(line)){
       let tr=xlatLine(line);if(st)tr=transpLine(tr,st);
       const next=i+1<lines.length?lines[i+1]:'';
